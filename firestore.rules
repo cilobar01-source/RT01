@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isAdminRT(){ return request.auth != null && userRole() == "admin_rt"; }
+    function isBendRT(){ return request.auth != null && userRole() == "bendahara_rt"; }
+    function isAdminPKK(){ return request.auth != null && userRole() == "admin_pkk"; }
+    function isBendPKK(){ return request.auth != null && userRole() == "bendahara_pkk"; }
+    function isAdminKT(){ return request.auth != null && userRole() == "admin_kt"; }
+    function isBendKT(){ return request.auth != null && userRole() == "bendahara_kt"; }
+
+    // Users
+    match /users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdminRT());
+      // User boleh update dirinya, tapi tidak boleh mengubah role
+      allow update: if request.auth != null && request.auth.uid == uid &&
+        !(("role" in request.resource.data) && request.resource.data.role != resource.data.role);
+      allow create: if request.auth != null && request.auth.uid == uid;
+      // Admin RT boleh write apa saja
+      allow write: if isAdminRT();
+    }
+
+    // Kas RT
+    match /kas_rt/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdminRT() || isBendRT();
+    }
+    // Kas PKK
+    match /kas_pkk/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdminRT() || isAdminPKK() || isBendPKK();
+    }
+    // Kas KT
+    match /kas_kt/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdminRT() || isAdminKT() || isBendKT();
+    }
+
+    // Laporan RT
+    match /laporan_rt/{id} {
+      allow read: if resource.data.publik == true || (request.auth != null && (isAdminRT() || request.auth.uid == resource.data.dibuatOleh));
+      allow create: if request.auth != null;
+      allow update: if isAdminRT() || (request.auth != null && request.auth.uid == resource.data.dibuatOleh);
+      allow delete: if isAdminRT();
+    }
+
+    // Permohonan Surat
+    match /permohonan_surat/{id} {
+      allow read: if request.auth != null && (isAdminRT() || request.auth.uid == resource.data.pemohon);
+      allow create: if request.auth != null;
+      allow update, delete: if isAdminRT() || (request.auth != null && request.auth.uid == resource.data.pemohon && resource.data.status == "menunggu");
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
